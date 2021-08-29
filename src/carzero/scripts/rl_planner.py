@@ -109,7 +109,8 @@ def main():
     shared_images = {k: v.get() for k, v in shared_images_arr.items()}
     shared_event = Event()
 
-    Process(target=visualizer_worker_, args=(shared_images_arr, shared_event)).start()
+    vis_process = Process(target=visualizer_worker_, args=(shared_images_arr, shared_event))
+    vis_process.start()
 
     # control loop
     rate = rospy.Rate(param_loop_rate)
@@ -165,6 +166,9 @@ def main():
         print("Latency: {:.2f} ms".format((time.time() - time_start) * 1000))
         shared_event.set()
         rate.sleep()
+
+    # stop visualizer
+    vis_process.kill()
 
 
 if __name__ == "__main__":
