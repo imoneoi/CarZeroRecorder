@@ -37,16 +37,28 @@ def reconfigure_callback(config: RLPlannerConfig, level: int):
 # Main
 
 
-def visualizer_worker_(vis_dict: dict, event: Event):
+def visualizer_worker_(vis_dict: dict, event: Event, control_rate: int, record_path: str):
     vis_dict = {k: v.get() for k, v in vis_dict.items()}
     for k in vis_dict.keys():
         cv2.namedWindow(k, cv2.WINDOW_NORMAL)
+
+    video_writers = {}
+    if record_path:
+        save_path = os.path.join(record_path, time.strftime("%H-%M-%S %m-%d-%Y"))
+        os.makedirs(save_path, exist_ok=True)
+
+        video_writers = {
+            k: cv2.VideoWriter(os.path.join(save_path, k + ".mp4"), cv2.cv_FOURCC(*"H264"), control_rate, v.shape[:2:-1])
+            for k, v in vis_dict.items()}
 
     while True:
         event.wait()
         event.clear()
         for k, v in vis_dict.items():
-            cv2.imshow(k, cv2.cvtColor(v, cv2.COLOR_RGB2BGR))
+            image = cv2.cvtColor(v, cv2.COLOR_RGB2BGR)
+            cv2.imshow(k, image)
+            if record_path:
+                video_writers[k].write(image)
 
         cv2.waitKey(1)
 
@@ -100,6 +112,8 @@ def main():
     param_size_seg = read_image_size(rospy.get_param("size_seg", "640x320"))
     param_size_policy = read_image_size(rospy.get_param("size_policy", "160x80"))
 
+    param_record_path = rospy.get_param("record_path", "~/Videos/carzero")
+
     # visualizer process
     shared_images_arr = {
         "crop": SharedArray((*param_size_seg[::-1], 3), np.uint8),
@@ -109,7 +123,7 @@ def main():
     shared_images = {k: v.get() for k, v in shared_images_arr.items()}
     shared_event = Event()
 
-    vis_process = Process(target=visualizer_worker_, args=(shared_images_arr, shared_event))
+    vis_process = Process(target=visualizer_worker_, args=(shared_images_arr, shared_event, param_loop_rate, param_record_path))
     vis_process.start()
 
     # control loop
@@ -173,3 +187,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
