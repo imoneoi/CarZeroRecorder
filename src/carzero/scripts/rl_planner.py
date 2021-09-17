@@ -37,7 +37,7 @@ def reconfigure_callback(config: RLPlannerConfig, level: int):
 # Main
 
 
-def visualizer_worker_(vis_dict: dict, event: Event, control_rate: int, record_path: str):
+def visualizer_worker_(vis_dict: dict, event: Event, terminate: Event, control_rate: int, record_path: str):
     vis_dict = {k: v.get() for k, v in vis_dict.items()}
     for k in vis_dict.keys():
         cv2.namedWindow(k, cv2.WINDOW_NORMAL)
@@ -48,10 +48,11 @@ def visualizer_worker_(vis_dict: dict, event: Event, control_rate: int, record_p
         os.makedirs(save_path, exist_ok=True)
 
         video_writers = {
-            k: cv2.VideoWriter(os.path.join(save_path, k + ".mp4"), cv2.cv_FOURCC(*"H264"), control_rate, v.shape[:2:-1])
+            k: cv2.VideoWriter(os.path.join(save_path, k + ".mp4"), cv2.VideoWriter_fourcc(*"mp4v"), control_rate,
+                               v.shape[1::-1])
             for k, v in vis_dict.items()}
 
-    while True:
+    while not terminate.is_set():
         event.wait()
         event.clear()
         for k, v in vis_dict.items():
@@ -61,6 +62,9 @@ def visualizer_worker_(vis_dict: dict, event: Event, control_rate: int, record_p
                 video_writers[k].write(image)
 
         cv2.waitKey(1)
+
+    for v in video_writers.values():
+        v.release()
 
 
 def read_image_size(res: str):
@@ -112,7 +116,7 @@ def main():
     param_size_seg = read_image_size(rospy.get_param("size_seg", "640x320"))
     param_size_policy = read_image_size(rospy.get_param("size_policy", "160x80"))
 
-    param_record_path = rospy.get_param("record_path", "~/Videos/carzero")
+    param_record_path = rospy.get_param("record_path", "Videos/carzero")
 
     # visualizer process
     shared_images_arr = {
@@ -122,8 +126,10 @@ def main():
     }
     shared_images = {k: v.get() for k, v in shared_images_arr.items()}
     shared_event = Event()
+    terminate_event = Event()
 
-    vis_process = Process(target=visualizer_worker_, args=(shared_images_arr, shared_event, param_loop_rate, param_record_path))
+    vis_process = Process(target=visualizer_worker_, args=(shared_images_arr, shared_event, terminate_event,
+                                                           param_loop_rate, param_record_path))
     vis_process.start()
 
     # control loop
@@ -177,14 +183,14 @@ def main():
         twist_pub.publish(twist)
 
         # loop
-        print("Latency: {:.2f} ms".format((time.time() - time_start) * 1000))
+        # print("Latency: {:.2f} ms".format((time.time() - time_start) * 1000))
         shared_event.set()
         rate.sleep()
 
     # stop visualizer
-    vis_process.kill()
+    terminate_event.set()
+    shared_event.set()
 
 
 if __name__ == "__main__":
     main()
-
